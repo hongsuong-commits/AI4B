@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # AI Seat Posture Detection – Dashboard
 **Hệ thống nhận diện và cảnh báo tư thế ngồi bằng AI theo thời gian thực**
 
@@ -132,3 +133,6 @@ Dự án đi kèm bộ kiểm thử tự động với **21 ca kiểm thử** (`
 ### Xác minh bổ sung trong môi trường thực tế:
 - **Webcam thực tế:** Mở website qua `http://localhost:5173`, cấp quyền camera, kiểm tra việc khớp khung xương màu xanh lá/đỏ khi cử động đầu và vai.
 - **Model Teachable Machine thực tế:** Kiểm tra hai xác suất dự đoán với webcam và các mẫu tư thế thực tế.
+=======
+# AI4B
+>>>>>>> 1360e7c74eb7ac8be831aeffe64a9fd7ae128011
