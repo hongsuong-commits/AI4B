@@ -1,17 +1,18 @@
 import React, { useRef, useEffect, useCallback } from 'react';
 import { SKELETON_CONNECTIONS } from '../ai/aiContract.js';
+import { FlipHorizontal } from 'lucide-react';
 import { TM_CLASSES } from '../constants/postureConfig.js';
 
 export default function CameraPanel({
   isCameraRunning,
   stream,
   predictions,
-  neckAngle = 9,
   hasKeypoints = true,
   activePoseFrame,
   enableVoiceAlert,
   onStartCamera,
-  onSimulate,
+  mirrorVideo = true,
+  onToggleMirror,
   simulationState = 'correct'
 }) {
   const videoRef = useRef(null);
@@ -93,7 +94,9 @@ export default function CameraPanel({
     const getCanvasPoint = (kp) => {
       if (!kp || !Number.isFinite(kp.x) || !Number.isFinite(kp.y)) return null;
       return {
-        x: offsetX + kp.x * renderWidth,
+        x: mirrorVideo
+          ? width - (offsetX + kp.x * renderWidth)
+          : offsetX + kp.x * renderWidth,
         y: offsetY + kp.y * renderHeight,
         score: kp.score
       };
@@ -127,7 +130,7 @@ export default function CameraPanel({
         ctx.stroke();
       }
     }
-  }, [activePoseFrame, isIncorrect, isCameraRunning]);
+  }, [activePoseFrame, isIncorrect, isCameraRunning, mirrorVideo]);
 
   useEffect(() => {
     drawSkeleton();
@@ -140,7 +143,6 @@ export default function CameraPanel({
     : topPrediction
     ? topPrediction.className
     : 'Chưa có dự đoán';
-  const displayNeckAngle = neckAngle !== null && neckAngle !== undefined ? `${Math.round(neckAngle)}°` : '—';
 
   // Render stylized SVG mannequin for simulation / standby mode
   const renderMannequinSvg = () => {
@@ -224,10 +226,20 @@ export default function CameraPanel({
         {/* Real video if camera is active */}
         {isCameraRunning ? (
           <>
+            <button
+              type="button"
+              className={`camera-mirror-button ${mirrorVideo ? 'active' : ''}`}
+              onClick={onToggleMirror}
+              aria-label={mirrorVideo ? 'Tắt đối xứng ảnh camera' : 'Bật đối xứng ảnh camera'}
+              aria-pressed={mirrorVideo}
+              title={mirrorVideo ? 'Tắt chế độ gương' : 'Bật chế độ gương'}
+            >
+              <FlipHorizontal size={18} />
+            </button>
             <video
               ref={videoRef}
               id="webcam-video"
-              className="pro-camera-feed"
+              className={`pro-camera-feed ${mirrorVideo ? 'mirrored' : ''}`}
               autoPlay
               playsInline
               muted
@@ -250,11 +262,11 @@ export default function CameraPanel({
 
         {/* Bottom-left telemetry info */}
         <div className="pro-video-bottom-bar">
-          AI Keypoints: {hasKeypoints ? 'OK' : 'MISSING'} • Độ lệch: {displayNeckAngle}
+          AI Keypoints: {hasKeypoints ? 'OK' : 'MISSING'}
         </div>
       </div>
 
-      {/* Row of 4 control buttons */}
+      {/* Camera control row */}
       <div className="pro-camera-buttons">
         <button
           className="btn pro-btn-webcam"
@@ -264,32 +276,6 @@ export default function CameraPanel({
           Dùng Webcam Thật
         </button>
 
-        <div className="pro-sim-group">
-          <button
-            className={`btn pro-btn-sim-correct ${simulationState === 'correct' ? 'active' : ''}`}
-            disabled={isCameraRunning}
-            onClick={() => onSimulate('correct')}
-            title="Mô phỏng tư thế ngồi thẳng chuẩn"
-          >
-            Ngồi thẳng
-          </button>
-          <button
-            className={`btn pro-btn-sim-hunch ${simulationState === 'hunch' ? 'active' : ''}`}
-            disabled={isCameraRunning}
-            onClick={() => onSimulate('hunch')}
-            title="Mô phỏng tư thế gù lưng / cúi cổ"
-          >
-            Gù lưng
-          </button>
-          <button
-            className={`btn pro-btn-sim-lean ${simulationState === 'lean' ? 'active' : ''}`}
-            disabled={isCameraRunning}
-            onClick={() => onSimulate('lean')}
-            title="Mô phỏng tư thế nghiêng người / lệch vai"
-          >
-            Nghiêng vai
-          </button>
-        </div>
       </div>
       {!enableVoiceAlert && (
         <div

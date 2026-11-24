@@ -45,6 +45,8 @@ describe('Storage & ZIP Export Services', () => {
 
     const res1 = await storageService.addRecord(rec1);
     expect(res1.success).toBe(true);
+    expect(res1.record.capture_source).toBe('manual');
+    expect(res1.record.confidence).toBe(85);
 
     // Try adding duplicate frameId in session_1
     const res2 = await storageService.addRecord(rec1);
@@ -53,6 +55,21 @@ describe('Storage & ZIP Export Services', () => {
 
     const history = storageService.getHistory();
     expect(history.length).toBe(1);
+  });
+
+  it('persists fractional AI confidence and explicit capture source', async () => {
+    const result = await storageService.addRecord({
+      sessionId: 'session_fractional',
+      frameId: 1,
+      status: STATUS_KEY.INCORRECT,
+      source: 'auto',
+      capture_source: 'auto',
+      confidence: 0.97
+    });
+    expect(result.success).toBe(true);
+    expect(result.record.capture_source).toBe('auto');
+    expect(result.record.confidence).toBe(0.97);
+    expect(storageService.getHistory()[0].capture_source).toBe('auto');
   });
 
   it('enforces 3 MiB budget limit safely', async () => {

@@ -154,7 +154,7 @@ export default function RecordDetailModal({ record, onClose }) {
           </div>
           <div>
             <span style={{ color: '#64748b' }}>Nguồn chụp:</span>{' '}
-            {record.source === 'auto' ? 'Tự động (Auto-save)' : 'Thủ công (Capture Now)'}
+            {(record.capture_source || record.source) === 'auto' ? 'Tự động lưu' : 'Chụp thủ công'}
           </div>
           <div>
             <span style={{ color: '#64748b' }}>Nguồn AI:</span>{' '}

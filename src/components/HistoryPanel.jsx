@@ -53,7 +53,6 @@ export default function HistoryPanel({
               ? (record.confidence > 1 ? record.confidence / 100 : record.confidence)
               : 0.85;
             const severity = getSeverity(rawConf);
-            const neckAngle = record.metrics?.neckAngle ?? 32;
 
             const isCorrect = (record.className || record.status) === 'Ngồi đúng tư thế';
             const isHunch = (record.className || record.status) === 'Gù lưng / Cúi cổ';
@@ -98,9 +97,8 @@ export default function HistoryPanel({
                   </div>
                   <div className="pro-history-date">{formatDateTime(record.capturedAt)}</div>
                   <div className="pro-history-badges">
-                    <span className="pro-badge pro-badge-neck">
-                      <span className="pro-dot-red" />
-                      Góc cổ: {Math.round(neckAngle)}°
+                    <span className="pro-badge pro-badge-cyan">
+                      {record.capture_source === 'auto' || record.source === 'auto' ? 'Tự động lưu' : 'Chụp thủ công'}
                     </span>
                     <span className={`pro-badge ${severity.cls}`}>
                       Mức độ: {severity.label}

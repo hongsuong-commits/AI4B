@@ -122,6 +122,11 @@ class StorageService {
    * Nén ảnh từ video element thành Data URL JPEG kích thước tối đa 480px
    */
   async compressVideoFrame(videoElement, maxDimension = SYSTEM_LIMITS.MAX_IMAGE_DIMENSION, quality = SYSTEM_LIMITS.IMAGE_JPEG_QUALITY) {
+    const frame = await this.captureVideoFrame(videoElement, maxDimension, quality);
+    return frame?.dataUrl || null;
+  }
+
+  captureVideoFrame(videoElement, maxDimension = SYSTEM_LIMITS.MAX_IMAGE_DIMENSION, quality = SYSTEM_LIMITS.IMAGE_JPEG_QUALITY) {
     return new Promise((resolve) => {
       try {
         if (!videoElement || videoElement.videoWidth === 0 || videoElement.videoHeight === 0) {
@@ -156,7 +161,7 @@ class StorageService {
 
         ctx.drawImage(videoElement, 0, 0, targetWidth, targetHeight);
         const dataUrl = canvas.toDataURL('image/jpeg', quality);
-        resolve(dataUrl);
+        resolve({ dataUrl, canvas });
       } catch (err) {
         console.error('Lỗi nén ảnh khung hình:', err);
         resolve(null);
@@ -195,11 +200,13 @@ class StorageService {
             sessionId: record.sessionId || 'default',
             frameId: record.frameId || Date.now(),
             capturedAt: record.capturedAt || new Date().toISOString(),
-            source: record.source || 'manual', // 'manual' | 'auto'
+            // Keep the legacy source field readable while capture_source is the canonical field.
+            source: record.capture_source || record.source || 'manual',
+            capture_source: record.capture_source || record.source || 'manual',
             aiSource: record.aiSource || 'mediapipe',
             viewAngle: record.viewAngle || 'front',
             status: record.status,
-            confidence: Number.isFinite(record.confidence) ? Math.round(record.confidence) : 0,
+            confidence: Number.isFinite(record.confidence) ? record.confidence : 0,
             postureScore: Number.isFinite(record.postureScore) ? Math.round(record.postureScore) : 0,
             metrics: record.metrics || {},
             violations: Array.isArray(record.violations) ? record.violations : [],

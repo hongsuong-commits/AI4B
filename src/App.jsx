@@ -26,28 +26,7 @@ const DEFAULT_PREDICTIONS = [
   { className: TM_CLASSES.INCORRECT, probability: 0.06 }
 ];
 
-// Initial sample history if local storage is empty
-const getInitialHistory = () => {
-  const stored = storageService.getHistory();
-  if (stored && stored.length > 0) return stored;
-  return [
-    {
-      id: 'rec_sample_1',
-      frameId: 1,
-      source: 'auto',
-      aiSource: AI_SOURCES.TEACHABLE_MACHINE,
-      viewAngle: 'front',
-      status: 'Incorrect Posture',
-      className: 'Gù lưng / Cúi cổ',
-      confidence: 0.85,
-      postureScore: 35,
-      metrics: { neckAngle: 32 },
-      violations: ['FORWARD_HEAD'],
-      image: null,
-      capturedAt: '2026-11-12T03:25:30.000Z'
-    }
-  ];
-};
+const getInitialHistory = () => storageService.getHistory();
 
 export default function App() {
   // Settings
@@ -81,7 +60,6 @@ export default function App() {
   const [predictions, setPredictions] = useState(DEFAULT_PREDICTIONS);
   const [activePoseFrame, setActivePoseFrame] = useState(null);
   const [neckAngle, setNeckAngle] = useState(9);
-  const [simulationState, setSimulationState] = useState('correct'); // 'correct' | 'hunch' | 'lean'
 
   // Stats matching screenshot defaults
   const [checkCount, setCheckCount] = useState(99);
@@ -220,7 +198,6 @@ export default function App() {
     setCameraStream(null);
     setIsCameraRunning(false);
     setActivePoseFrame(null);
-    setSimulationState('correct');
     setPredictions(DEFAULT_PREDICTIONS);
     setNeckAngle(9);
     isInferenceRunningRef.current = false;
@@ -246,6 +223,7 @@ export default function App() {
         sessionId: sessionIdRef.current,
         frameId: ++frameCounterRef.current,
         source: 'auto',
+        capture_source: 'auto',
         aiSource: AI_SOURCES.TEACHABLE_MACHINE,
         viewAngle: 'front',
         status: 'Incorrect Posture',
@@ -398,73 +376,42 @@ export default function App() {
     };
   }, [isCameraRunning, modelStatus.isLoaded, autoSaveBadPosture, settings.thresholds, settings.enableSoundAlert, settings.enableVoiceAlert, settings.antiSpamWindow]);
 
-  // Simulation Mode Click
-  const handleSimulate = useCallback(
-    (mode) => {
-      setSimulationState(mode);
-      setCheckCount((c) => c + 1);
-      setActivePoseFrame(null);
-
-      if (mode === 'correct') {
-        setPredictions([
-          { className: TM_CLASSES.CORRECT, probability: 0.94 },
-          { className: TM_CLASSES.INCORRECT, probability: 0.06 }
-        ]);
-        setNeckAngle(9);
-      } else if (mode === 'hunch') {
-        setPredictions([
-          { className: TM_CLASSES.CORRECT, probability: 0.04 },
-          { className: TM_CLASSES.INCORRECT, probability: 0.96 }
-        ]);
-        setNeckAngle(32);
-        if (settings.enableSoundAlert) audioAlertService.playIncorrectAlert();
-        if (settings.enableVoiceAlert) {
-          audioAlertService.speakVoice('Nhắc nhở: Bạn đang gù lưng, cúi cổ. Vui lòng ngồi thẳng lại!');
-        }
-      } else if (mode === 'lean') {
-        setPredictions([
-          { className: TM_CLASSES.CORRECT, probability: 0.03 },
-          { className: TM_CLASSES.INCORRECT, probability: 0.97 }
-        ]);
-        setNeckAngle(18);
-        if (settings.enableSoundAlert) audioAlertService.playIncorrectAlert();
-        if (settings.enableVoiceAlert) {
-          audioAlertService.speakVoice('Nhắc nhở: Bạn đang nghiêng người hoặc lệch vai. Vui lòng điều chỉnh lại!');
-        }
-      }
-    },
-    [settings.enableSoundAlert, settings.enableVoiceAlert]
-  );
-
   // Manual Capture Now
   const handleCaptureNow = useCallback(async () => {
     const video = document.getElementById('webcam-video');
     try {
-      let dataUrl = null;
-      if (video && video.videoWidth > 0) {
-        dataUrl = await storageService.compressVideoFrame(video);
-      }
-
-      const topPred = [...predictions].sort((a, b) => b.probability - a.probability)[0];
-      if (!topPred) {
-        addToast('Chưa có kết quả dự đoán để lưu.', 'warning');
+      const capturedFrame = video && video.videoWidth > 0
+        ? await storageService.captureVideoFrame(video)
+        : null;
+      if (!capturedFrame?.dataUrl || !capturedFrame.canvas) {
+        addToast('Không thể chụp khung hình camera.', 'warning');
         return;
       }
+      const poseAtCapture = await teachableMachineAdapter.detectPose(capturedFrame.canvas, performance.now());
+      const topPred = poseAtCapture.modelPrediction;
+      if (!poseAtCapture.hasPerson || !topPred || !Number.isFinite(topPred.probability)) {
+        addToast('Không nhận diện được tư thế trong ảnh vừa chụp.', 'warning');
+        return;
+      }
+
       const isBad = topPred.className === TM_CLASSES.INCORRECT;
 
       const record = {
         sessionId: sessionIdRef.current,
         frameId: ++frameCounterRef.current,
         source: 'manual',
+        capture_source: 'manual',
         aiSource: AI_SOURCES.TEACHABLE_MACHINE,
         viewAngle: 'front',
         status: isBad ? 'Incorrect Posture' : 'Correct Posture',
         className: topPred?.className || 'Ngồi đúng tư thế',
-        confidence: topPred?.probability || 0.94,
+        confidence: topPred.probability,
         postureScore: isBad ? 35 : 95,
-        metrics: { neckAngle: neckAngle ?? 9 },
+        metrics: poseAtCapture.keypoints
+          ? calculatePostureMetrics({ keypoints: poseAtCapture.keypoints, thresholds: settings.thresholds || {} })?.metrics || {}
+          : {},
         violations: isBad ? ['MODEL_INCORRECT'] : [],
-        image: dataUrl,
+        image: capturedFrame.dataUrl,
         capturedAt: new Date().toISOString()
       };
 
@@ -484,7 +431,7 @@ export default function App() {
     } catch (e) {
       addToast('Lỗi khi chụp ảnh: ' + e.message, 'danger');
     }
-  }, [predictions, neckAngle, addToast]);
+  }, [settings.thresholds, addToast]);
 
   // Clear History
   const handleConfirmClearHistory = useCallback(() => {
@@ -551,13 +498,12 @@ export default function App() {
               isCameraRunning={isCameraRunning}
               stream={cameraStream}
               predictions={predictions}
-              neckAngle={neckAngle}
               hasKeypoints={hasKeypoints}
               activePoseFrame={activePoseFrame}
               enableVoiceAlert={settings.enableVoiceAlert}
               onStartCamera={handleStartCamera}
-              onSimulate={handleSimulate}
-              simulationState={simulationState}
+              mirrorVideo={!!settings.mirrorVideo}
+              onToggleMirror={() => handleUpdateSettings({ mirrorVideo: !settings.mirrorVideo })}
             />
 
             {/* Right Sub-column: Predictions & Controls */}
