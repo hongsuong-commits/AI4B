@@ -1,5 +1,6 @@
 import React from 'react';
 import { Image as ImageIcon } from 'lucide-react';
+import { formatConfidenceDecimal } from '../utils/formatConfidence.js';
 
 function formatDateTime(isoString) {
   if (!isoString) return '—';
@@ -49,6 +50,7 @@ export default function HistoryPanel({
       ) : (
         <div className="pro-history-list">
           {history.map((record) => {
+            if (record.captureId) console.info('[confidence-trace]', { stage: 'history-render', captureId: record.captureId, recordId: record.id, confidence: record.confidence ?? null });
             const rawConf = typeof record.confidence === 'number' && Number.isFinite(record.confidence)
               ? record.confidence
               : null;
@@ -92,7 +94,7 @@ export default function HistoryPanel({
                     </span>
                     <span className="pro-history-conf">
                       {' — '}
-                      {rawConf === null ? '—' : rawConf.toFixed(2)}
+                      {formatConfidenceDecimal(rawConf)}
                     </span>
                   </div>
                   <div className="pro-history-date">{formatDateTime(record.capturedAt)}</div>

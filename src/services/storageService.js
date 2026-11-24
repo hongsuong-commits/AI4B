@@ -81,6 +81,9 @@ class StorageService {
    */
   getHistory() {
     if (this.cachedHistory) {
+      this.cachedHistory.forEach(item => {
+        if (item.captureId) console.info('[confidence-trace]', { stage: 'history-read-cache', captureId: item.captureId, recordId: item.id, confidence: item.confidence ?? null });
+      });
       return [...this.cachedHistory];
     }
     try {
@@ -93,6 +96,9 @@ class StorageService {
       if (Array.isArray(parsed)) {
         // Kiểm tra tính hợp lệ cơ bản
         this.cachedHistory = parsed.filter(item => item && item.id && item.capturedAt);
+        this.cachedHistory.forEach(item => {
+          if (item.captureId) console.info('[confidence-trace]', { stage: 'history-read-localStorage', captureId: item.captureId, recordId: item.id, confidence: item.confidence ?? null });
+        });
         return [...this.cachedHistory];
       }
       this.cachedHistory = [];
@@ -195,11 +201,13 @@ class StorageService {
           }
 
           // Chuẩn hóa bản ghi
+          if (record.captureId) console.info('[confidence-trace]', { stage: 'storage-received', captureId: record.captureId, confidence: record.confidence ?? null });
           const recordToSave = {
             id: record.id || `rec_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
             sessionId: record.sessionId || 'default',
             frameId: record.frameId || Date.now(),
             capturedAt: record.capturedAt || new Date().toISOString(),
+            captureId: record.captureId || null,
             // Keep the legacy source field readable while capture_source is the canonical field.
             source: record.capture_source || record.source || 'manual',
             capture_source: record.capture_source || record.source || 'manual',
@@ -230,6 +238,11 @@ class StorageService {
 
           localStorage.setItem(STORAGE_KEYS.HISTORY, serialized);
           this.cachedHistory = newList;
+          if (recordToSave.captureId) {
+            const persistedList = JSON.parse(localStorage.getItem(STORAGE_KEYS.HISTORY) || '[]');
+            const persistedRecord = persistedList.find(item => item.captureId === recordToSave.captureId);
+            console.info('[confidence-trace]', { stage: 'localStorage-write-readback', captureId: recordToSave.captureId, recordId: recordToSave.id, confidence: persistedRecord?.confidence ?? null });
+          }
 
           resolve({
             success: true,

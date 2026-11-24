@@ -119,6 +119,7 @@ export function buildCaptureRecord({
     : {};
 
   return {
+    captureId: poseFrame.captureId || null,
     sessionId,
     frameId,
     source: captureSource,

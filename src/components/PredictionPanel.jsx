@@ -1,5 +1,6 @@
 import React from 'react';
 import { TM_CLASSES } from '../constants/postureConfig.js';
+import { formatConfidenceDecimal } from '../utils/formatConfidence.js';
 
 function formatDateTime(isoString) {
   if (!isoString) return '—';
@@ -68,7 +69,7 @@ export default function PredictionPanel({
                 className="pro-pred-value"
                 style={{ color: getScoreColor(i) }}
               >
-                {pred.probability === null ? '—' : pred.probability.toFixed(2)}
+                {formatConfidenceDecimal(pred.probability)}
               </span>
             </div>
             <div className="pro-pred-track">

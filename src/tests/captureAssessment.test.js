@@ -21,7 +21,7 @@ function keypointsAtAngle(angle, score = 0.9) {
 describe('posture score from same-side ear and shoulder keypoints', () => {
   it.each([
     [5, 100],
-    [25, 50],
+    [25, 66.7],
     [45, 0]
   ])('maps %i degrees to %i points', (angle, expectedScore) => {
     expect(calculateNeckPostureScore(keypointsAtAngle(angle), frameSize.width, frameSize.height)?.postureScore)
@@ -68,13 +68,37 @@ describe('manual and automatic capture assessment', () => {
     });
 
     expect(record.predictionLabel).toBe(expectedLabel);
-    expect(record.status).toBe(expectedLabel);
+    expect(record.status).toBe('Incorrect Posture');
     expect(record.confidence).toBe(confidence);
-    expect(record.postureScore).toBe(50);
+    expect(record.postureScore).toBe(66.7);
     expect(record.keypoints).toBe(poseFrame.keypoints);
     expect(record.image).toBe('data:image/jpeg;base64,snapshot');
     expect(record.capturedAt).toBe(capturedAt);
     expect(record.capture_source).toBe(captureSource);
+  });
+
+  it('preserves raw model confidence through manual and automatic capture payloads', () => {
+    for (const captureSource of ['manual', 'auto']) {
+      for (const confidence of [0.93, 0.87, 0.996, 1.00]) {
+      const record = buildCaptureRecord({
+        poseFrame: {
+          hasPerson: true,
+          aiSource: 'teachable-machine',
+          keypoints: keypointsAtAngle(5),
+          modelPrediction: { className: TM_CLASSES.CORRECT, probability: confidence }
+        },
+        image: 'snapshot',
+        capturedAt: '2026-11-24T11:00:00.000Z',
+        captureSource,
+        frameWidth: frameSize.width,
+        frameHeight: frameSize.height,
+        sessionId: 'session_test',
+        frameId: `${captureSource}-${confidence}`,
+        thresholds: {}
+      });
+      expect(record.confidence).toBe(confidence);
+      }
+    }
   });
 
   it('keeps a valid label but stores NULL confidence and score when source data is invalid', () => {

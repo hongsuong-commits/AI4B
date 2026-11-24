@@ -28,6 +28,7 @@ const DEFAULT_PREDICTIONS = [
 ];
 
 const getInitialHistory = () => storageService.getHistory();
+const createCaptureId = () => globalThis.crypto?.randomUUID?.() || `capture_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
 export default function App() {
   // Settings
@@ -215,7 +216,10 @@ export default function App() {
     try {
       const capturedFrame = await storageService.captureVideoFrame(video);
       if (!capturedFrame?.dataUrl || !capturedFrame.canvas || !autoSaveEnabledRef.current || isStopRequestedRef.current || generation !== autoSaveGenerationRef.current) return;
-      const capturedPose = await teachableMachineAdapter.detectPose(capturedFrame.canvas, performance.now());
+      const captureId = createCaptureId();
+      const capturedPose = await teachableMachineAdapter.detectPose(capturedFrame.canvas, performance.now(), captureId);
+      if (capturedPose.captureId !== captureId) throw new Error('Inference không khớp khung hình tự động được chụp.');
+      console.info('[confidence-trace]', { stage: 'app-auto-capture-inference', captureId, confidence: capturedPose.modelPrediction?.probability ?? null });
       const record = buildCaptureRecord({
         poseFrame: capturedPose,
         image: capturedFrame.dataUrl,
@@ -228,6 +232,7 @@ export default function App() {
         thresholds: settings.thresholds
       });
       if (!record) return;
+      console.info('[confidence-trace]', { stage: 'auto-payload', captureId, confidence: record.confidence });
 
       const res = await storageService.addRecord(record);
       if (res.success) {
@@ -380,12 +385,16 @@ export default function App() {
         addToast('Không thể chụp khung hình camera.', 'warning');
         return;
       }
-      const poseAtCapture = await teachableMachineAdapter.detectPose(capturedFrame.canvas, performance.now());
+      const captureId = createCaptureId();
+      const poseAtCapture = await teachableMachineAdapter.detectPose(capturedFrame.canvas, performance.now(), captureId);
+      if (poseAtCapture.captureId !== captureId) throw new Error('Inference không khớp khung hình thủ công được chụp.');
+      console.info('[confidence-trace]', { stage: 'app-manual-capture-inference', captureId, confidence: poseAtCapture.modelPrediction?.probability ?? null });
       const record = buildCaptureRecord({ poseFrame: poseAtCapture, image: capturedFrame.dataUrl, capturedAt: new Date().toISOString(), captureSource: 'manual', frameWidth: capturedFrame.canvas.width, frameHeight: capturedFrame.canvas.height, sessionId: sessionIdRef.current, frameId: ++frameCounterRef.current, thresholds: settings.thresholds });
       if (!record) {
         addToast('Không nhận diện được tư thế trong ảnh vừa chụp.', 'warning');
         return;
       }
+      console.info('[confidence-trace]', { stage: 'manual-payload', captureId, confidence: record.confidence });
       const isBad = record.status === 'Incorrect Posture';
 
       const res = await storageService.addRecord(record);

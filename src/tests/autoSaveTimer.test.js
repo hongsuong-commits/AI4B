@@ -17,22 +17,24 @@ describe('Tự động lưu tư thế sai sau 30 giây', () => {
     expect(observe(60_000)).toBe(true);
   });
 
-  it.each([
-    ['tư thế không còn sai hoặc không có dự đoán', { enabled: true, isIncorrect: false }],
-    ['tắt tự động lưu', { enabled: false, isIncorrect: true }]
-  ])('bắt đầu đếm lại khi %s', (_reason, interruption) => {
-    const timer = new AutoSaveTimer();
-    timer.observe({ enabled: true, isIncorrect: true, now: 0 });
-    for (let now = 1_000; now < 29_000; now += 1_000) {
-      expect(timer.observe({ enabled: true, isIncorrect: true, now })).toBe(false);
+  it('bắt đầu đếm lại sau khi tư thế đúng hoặc tắt tự động lưu', () => {
+    for (const interruption of [
+      { enabled: true, isIncorrect: false },
+      { enabled: false, isIncorrect: true }
+    ]) {
+      const timer = new AutoSaveTimer();
+      timer.observe({ enabled: true, isIncorrect: true, now: 0 });
+      for (let now = 1_000; now < 29_000; now += 1_000) {
+        expect(timer.observe({ enabled: true, isIncorrect: true, now })).toBe(false);
+      }
+      expect(timer.observe({ ...interruption, now: 29_000 })).toBe(false);
+      expect(timer.observe({ enabled: true, isIncorrect: true, now: 30_000 })).toBe(false);
+      for (let now = 31_000; now <= 59_000; now += 1_000) {
+        expect(timer.observe({ enabled: true, isIncorrect: true, now })).toBe(false);
+      }
+      expect(timer.observe({ enabled: true, isIncorrect: true, now: 59_999 })).toBe(false);
+      expect(timer.observe({ enabled: true, isIncorrect: true, now: 60_000 })).toBe(true);
     }
-    expect(timer.observe({ ...interruption, now: 29_000 })).toBe(false);
-    expect(timer.observe({ enabled: true, isIncorrect: true, now: 30_000 })).toBe(false);
-    for (let now = 31_000; now <= 59_000; now += 1_000) {
-      expect(timer.observe({ enabled: true, isIncorrect: true, now })).toBe(false);
-    }
-    expect(timer.observe({ enabled: true, isIncorrect: true, now: 59_999 })).toBe(false);
-    expect(timer.observe({ enabled: true, isIncorrect: true, now: 60_000 })).toBe(true);
   });
 
   it('xóa bộ đếm khi kết thúc phiên camera', () => {

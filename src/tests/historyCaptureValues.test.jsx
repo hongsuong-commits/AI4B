@@ -10,16 +10,19 @@ describe('saved capture values in history and record detail', () => {
       <HistoryPanel
         history={[
           { id: 'correct', className: 'Ngồi đúng tư thế', predictionLabel: 'Correct Posture', confidence: 0.92, postureScore: 72, capturedAt: '2026-11-24T11:00:00.000Z', capture_source: 'manual' },
-          { id: 'incorrect', className: 'Ngồi sai tư thế', predictionLabel: 'Incorrect Posture', confidence: 0.85, postureScore: 24, capturedAt: '2026-11-24T11:01:00.000Z', capture_source: 'auto' },
-          { id: 'missing', predictionLabel: 'Correct Posture', confidence: null, postureScore: null, capturedAt: '2026-11-24T11:02:00.000Z', capture_source: 'manual' }
+          { id: 'incorrect', className: 'Ngồi sai tư thế', predictionLabel: 'Incorrect Posture', confidence: 0.87, postureScore: 24, capturedAt: '2026-11-24T11:01:00.000Z', capture_source: 'auto' },
+          { id: 'near-perfect', className: 'Ngồi đúng tư thế', confidence: 0.996, capturedAt: '2026-11-24T11:02:00.000Z', capture_source: 'manual' },
+          { id: 'missing', predictionLabel: 'Correct Posture', confidence: null, postureScore: null, capturedAt: '2026-11-24T11:03:00.000Z', capture_source: 'manual' }
         ]}
       />
     );
 
-    expect(html).toContain('Correct Posture');
-    expect(html).toContain('Incorrect Posture');
+    expect(html).toContain('Ngồi đúng tư thế');
+    expect(html).toContain('Ngồi sai tư thế');
     expect(html).toContain('0.92');
-    expect(html).toContain('0.85');
+    expect(html).toContain('0.87');
+    expect(html).toContain('0.996');
+    expect(html).not.toContain('— <!-- -->1.00');
     expect(html).toContain('Tự động lưu');
     expect(html).toContain('Chụp thủ công');
     expect(html).toContain('—</span>');
@@ -43,9 +46,18 @@ describe('saved capture values in history and record detail', () => {
         onClose={() => {}}
       />
     );
-    expect(detail).toContain('Correct Posture</div>');
+    expect(detail).toContain('Đúng tư thế</span>');
     expect(detail).toContain('92%');
     expect(detail).toContain('72.5 / 100');
+
+    const nearPerfectDetail = renderToString(
+      <RecordDetailModal record={{ id: 'rec_996', confidence: 0.996 }} onClose={() => {}} />
+    );
+    expect(nearPerfectDetail).toContain('99.6%');
+    const detailAt87 = renderToString(
+      <RecordDetailModal record={{ id: 'rec_87', confidence: 0.87 }} onClose={() => {}} />
+    );
+    expect(detailAt87).toContain('87%');
 
     const missing = renderToString(
       <RecordDetailModal
