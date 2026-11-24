@@ -28,7 +28,6 @@ const DEFAULT_PREDICTIONS = [
 ];
 
 const getInitialHistory = () => storageService.getHistory();
-const createCaptureId = () => globalThis.crypto?.randomUUID?.() || `capture_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
 export default function App() {
   // Settings
@@ -62,6 +61,7 @@ export default function App() {
   const [predictions, setPredictions] = useState(DEFAULT_PREDICTIONS);
   const [activePoseFrame, setActivePoseFrame] = useState(null);
   const [neckAngle, setNeckAngle] = useState(9);
+  const latestInferenceRef = useRef(null);
 
   // Stats matching screenshot defaults
   const [checkCount, setCheckCount] = useState(99);
@@ -176,6 +176,7 @@ export default function App() {
       streamRef.current = stream;
       setPredictions([]);
       setActivePoseFrame(null);
+      latestInferenceRef.current = null;
       setNeckAngle(null);
       setCameraStream(stream);
       setIsCameraRunning(true);
@@ -200,39 +201,35 @@ export default function App() {
     setCameraStream(null);
     setIsCameraRunning(false);
     setActivePoseFrame(null);
+    latestInferenceRef.current = null;
     setPredictions(DEFAULT_PREDICTIONS);
     setNeckAngle(9);
     isInferenceRunningRef.current = false;
   }, []);
 
   // Auto-save bad posture
-  const autoSaveBadPosture = useCallback(async (poseFrame, topClass, topProb) => {
+  const autoSaveBadPosture = useCallback(async (inference) => {
     if (!autoSaveEnabledRef.current || isStopRequestedRef.current) return;
     const generation = autoSaveGenerationRef.current;
-
-    const video = document.getElementById('webcam-video');
-    if (!video) return;
+    const { poseFrame, canvas } = inference || {};
+    if (!canvas || !poseFrame?.inferenceId || poseFrame.inputFrame !== canvas || !Number.isFinite(poseFrame.confidence)) return;
 
     try {
-      const capturedFrame = await storageService.captureVideoFrame(video);
-      if (!capturedFrame?.dataUrl || !capturedFrame.canvas || !autoSaveEnabledRef.current || isStopRequestedRef.current || generation !== autoSaveGenerationRef.current) return;
-      const captureId = createCaptureId();
-      const capturedPose = await teachableMachineAdapter.detectPose(capturedFrame.canvas, performance.now(), captureId);
-      if (capturedPose.captureId !== captureId) throw new Error('Inference không khớp khung hình tự động được chụp.');
-      console.info('[confidence-trace]', { stage: 'app-auto-capture-inference', captureId, confidence: capturedPose.modelPrediction?.probability ?? null });
+      const image = storageService.encodeCanvasFrame(canvas);
+      if (!image || !autoSaveEnabledRef.current || isStopRequestedRef.current || generation !== autoSaveGenerationRef.current) return;
       const record = buildCaptureRecord({
-        poseFrame: capturedPose,
-        image: capturedFrame.dataUrl,
+        poseFrame,
+        image,
         capturedAt: new Date().toISOString(),
         captureSource: 'auto',
-        frameWidth: capturedFrame.canvas.width,
-        frameHeight: capturedFrame.canvas.height,
+        frameWidth: canvas.width,
+        frameHeight: canvas.height,
         sessionId: sessionIdRef.current,
         frameId: ++frameCounterRef.current,
         thresholds: settings.thresholds
       });
       if (!record) return;
-      console.info('[confidence-trace]', { stage: 'auto-payload', captureId, confidence: record.confidence });
+      console.info('[confidence-trace]', { stage: 'auto-payload', captureId: record.captureId, confidence: record.confidence });
 
       const res = await storageService.addRecord(record);
       if (res.success) {
@@ -294,9 +291,14 @@ export default function App() {
       if (video && video.readyState >= 2 && video.videoWidth > 0 && !isInferenceRunningRef.current) {
         isInferenceRunningRef.current = true;
         try {
-          const poseResult = await teachableMachineAdapter.detectPose(video, now);
+          const frameCanvas = storageService.captureVideoCanvas(video);
+          const poseResult = frameCanvas
+            ? await teachableMachineAdapter.detectPose(frameCanvas, now)
+            : null;
 
-          if (isMounted) {
+          if (isMounted && poseResult) {
+            const inference = { canvas: frameCanvas, poseFrame: poseResult, completedAt: performance.now() };
+            latestInferenceRef.current = inference;
             setActivePoseFrame(poseResult);
             setCheckCount((c) => c + 1);
 
@@ -313,8 +315,8 @@ export default function App() {
               // Neck Angle calculation
               if (poseResult.keypoints) {
                 try {
-                  const canvasWidth = video.videoWidth;
-                  const canvasHeight = video.videoHeight;
+                  const canvasWidth = frameCanvas.width;
+                  const canvasHeight = frameCanvas.height;
                   const metricsRes = calculatePostureMetrics({ keypoints: poseResult.keypoints, thresholds: settings.thresholds || {} });
                   const dx = Math.abs(poseResult.keypoints.leftEar?.x - poseResult.keypoints.leftShoulder?.x) * canvasWidth;
                   const dy = Math.abs(poseResult.keypoints.leftEar?.y - poseResult.keypoints.leftShoulder?.y) * canvasHeight;
@@ -339,7 +341,7 @@ export default function App() {
                 isIncorrect: topClass === TM_CLASSES.INCORRECT,
                 now: observedAt
               })) {
-                await autoSaveBadPosture(poseResult, topClass, topProb);
+                await autoSaveBadPosture(inference);
               }
             } else {
               browserNotificationService.reset();
@@ -376,25 +378,24 @@ export default function App() {
 
   // Manual Capture Now
   const handleCaptureNow = useCallback(async () => {
-    const video = document.getElementById('webcam-video');
+    const inference = latestInferenceRef.current;
+    if (!inference?.canvas || !inference.poseFrame?.inferenceId || inference.poseFrame.inputFrame !== inference.canvas || performance.now() - inference.completedAt > 2000) {
+      addToast('Chưa có khung hình kèm kết quả AI hợp lệ để chụp.', 'warning');
+      return;
+    }
     try {
-      const capturedFrame = video && video.videoWidth > 0
-        ? await storageService.captureVideoFrame(video)
-        : null;
-      if (!capturedFrame?.dataUrl || !capturedFrame.canvas) {
-        addToast('Không thể chụp khung hình camera.', 'warning');
+      const image = storageService.encodeCanvasFrame(inference.canvas);
+      if (!image) {
+        addToast('Không thể tạo ảnh từ khung hình đã nhận diện.', 'warning');
         return;
       }
-      const captureId = createCaptureId();
-      const poseAtCapture = await teachableMachineAdapter.detectPose(capturedFrame.canvas, performance.now(), captureId);
-      if (poseAtCapture.captureId !== captureId) throw new Error('Inference không khớp khung hình thủ công được chụp.');
-      console.info('[confidence-trace]', { stage: 'app-manual-capture-inference', captureId, confidence: poseAtCapture.modelPrediction?.probability ?? null });
-      const record = buildCaptureRecord({ poseFrame: poseAtCapture, image: capturedFrame.dataUrl, capturedAt: new Date().toISOString(), captureSource: 'manual', frameWidth: capturedFrame.canvas.width, frameHeight: capturedFrame.canvas.height, sessionId: sessionIdRef.current, frameId: ++frameCounterRef.current, thresholds: settings.thresholds });
+      console.info('[confidence-trace]', { stage: 'manual-capture-inference', captureId: inference.poseFrame.inferenceId, confidence: inference.poseFrame.confidence });
+      const record = buildCaptureRecord({ poseFrame: inference.poseFrame, image, capturedAt: new Date().toISOString(), captureSource: 'manual', frameWidth: inference.canvas.width, frameHeight: inference.canvas.height, sessionId: sessionIdRef.current, frameId: ++frameCounterRef.current, thresholds: settings.thresholds });
       if (!record) {
         addToast('Không nhận diện được tư thế trong ảnh vừa chụp.', 'warning');
         return;
       }
-      console.info('[confidence-trace]', { stage: 'manual-payload', captureId, confidence: record.confidence });
+      console.info('[confidence-trace]', { stage: 'manual-payload', captureId: record.captureId, confidence: record.confidence });
       const isBad = record.status === 'Incorrect Posture';
 
       const res = await storageService.addRecord(record);

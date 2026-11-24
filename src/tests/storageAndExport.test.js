@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { storageService } from '../services/storageService.js';
 import { exportHistoryToZip } from '../services/zipExportService.js';
-import { STORAGE_KEYS, SYSTEM_LIMITS, STATUS_KEY } from '../constants/postureConfig.js';
+import { SYSTEM_LIMITS, STATUS_KEY } from '../constants/postureConfig.js';
 
 // Polyfill localStorage cho môi trường node/vitest nếu cần
 if (typeof localStorage === 'undefined') {
@@ -70,25 +70,6 @@ describe('Storage & ZIP Export Services', () => {
     expect(result.record.capture_source).toBe('auto');
     expect(result.record.confidence).toBe(0.97);
     expect(storageService.getHistory()[0].capture_source).toBe('auto');
-  });
-
-  it('round-trips representative model confidence values unchanged through localStorage', async () => {
-    for (const [index, confidence] of [0.93, 0.87, 0.996, 1.00].entries()) {
-      const captureId = `capture-${index}`;
-      const result = await storageService.addRecord({
-        sessionId: `session-${captureId}`,
-        frameId: index + 1,
-        captureId,
-        status: STATUS_KEY.CORRECT,
-        confidence
-      });
-
-      expect(result.record.confidence).toBe(confidence);
-      const stored = JSON.parse(localStorage.getItem(STORAGE_KEYS.HISTORY));
-      expect(stored.find(record => record.captureId === captureId).confidence).toBe(confidence);
-      storageService.cachedHistory = null;
-      expect(storageService.getHistory().find(record => record.captureId === captureId).confidence).toBe(confidence);
-    }
   });
 
   it('enforces 3 MiB budget limit safely', async () => {

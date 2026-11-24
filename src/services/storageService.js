@@ -133,46 +133,38 @@ class StorageService {
   }
 
   captureVideoFrame(videoElement, maxDimension = SYSTEM_LIMITS.MAX_IMAGE_DIMENSION, quality = SYSTEM_LIMITS.IMAGE_JPEG_QUALITY) {
-    return new Promise((resolve) => {
-      try {
-        if (!videoElement || videoElement.videoWidth === 0 || videoElement.videoHeight === 0) {
-          resolve(null);
-          return;
-        }
+    const canvas = this.captureVideoCanvas(videoElement, maxDimension);
+    if (!canvas) return Promise.resolve(null);
+    try {
+      return Promise.resolve({ dataUrl: this.encodeCanvasFrame(canvas, quality), canvas });
+    } catch (err) {
+      console.error('Lỗi nén ảnh khung hình:', err);
+      return Promise.resolve(null);
+    }
+  }
 
-        const srcWidth = videoElement.videoWidth;
-        const srcHeight = videoElement.videoHeight;
+  captureVideoCanvas(videoElement, maxDimension = SYSTEM_LIMITS.MAX_IMAGE_DIMENSION) {
+    try {
+      if (!videoElement || videoElement.videoWidth <= 0 || videoElement.videoHeight <= 0) return null;
+      const srcWidth = videoElement.videoWidth;
+      const srcHeight = videoElement.videoHeight;
+      const scale = Math.min(1, maxDimension / Math.max(srcWidth, srcHeight));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(srcWidth * scale));
+      canvas.height = Math.max(1, Math.round(srcHeight * scale));
+      const context = canvas.getContext('2d');
+      if (!context) return null;
+      context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+      return canvas;
+    } catch (err) {
+      console.error('Lỗi lấy canvas khung hình:', err);
+      return null;
+    }
+  }
 
-        let targetWidth = srcWidth;
-        let targetHeight = srcHeight;
-
-        if (srcWidth > maxDimension || srcHeight > maxDimension) {
-          if (srcWidth > srcHeight) {
-            targetWidth = maxDimension;
-            targetHeight = Math.round((srcHeight * maxDimension) / srcWidth);
-          } else {
-            targetHeight = maxDimension;
-            targetWidth = Math.round((srcWidth * maxDimension) / srcHeight);
-          }
-        }
-
-        const canvas = document.createElement('canvas');
-        canvas.width = targetWidth;
-        canvas.height = targetHeight;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          resolve(null);
-          return;
-        }
-
-        ctx.drawImage(videoElement, 0, 0, targetWidth, targetHeight);
-        const dataUrl = canvas.toDataURL('image/jpeg', quality);
-        resolve({ dataUrl, canvas });
-      } catch (err) {
-        console.error('Lỗi nén ảnh khung hình:', err);
-        resolve(null);
-      }
-    });
+  encodeCanvasFrame(canvas, quality = SYSTEM_LIMITS.IMAGE_JPEG_QUALITY) {
+    if (!canvas || typeof canvas.toDataURL !== 'function') return null;
+    return canvas.toDataURL('image/jpeg', quality);
   }
 
   /**
@@ -208,6 +200,9 @@ class StorageService {
             frameId: record.frameId || Date.now(),
             capturedAt: record.capturedAt || new Date().toISOString(),
             captureId: record.captureId || null,
+            inferenceId: record.inferenceId || null,
+            inferenceTimestamp: record.inferenceTimestamp || null,
+            probabilities: Array.isArray(record.probabilities) ? record.probabilities : [],
             // Keep the legacy source field readable while capture_source is the canonical field.
             source: record.capture_source || record.source || 'manual',
             capture_source: record.capture_source || record.source || 'manual',
