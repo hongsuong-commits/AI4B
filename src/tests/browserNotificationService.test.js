@@ -45,18 +45,20 @@ describe('Thông báo tư thế khi chuyển tab', () => {
     expect(Notification.mock.calls.every(([, options]) => !('tag' in options))).toBe(true);
   });
 
-  it.each([
-    ['trở về tab', { hidden: false, predictions: prediction(1) }],
-    ['tư thế đúng', { hidden: true, predictions: prediction(0.1) }],
-    ['không có dự đoán', { hidden: true, predictions: [] }]
-  ])('đếm lại sau khi %s', (_reason, interruption) => {
-    const Notification = mockNotifications();
-    const service = new BrowserNotificationService();
-    for (let now = 0; now < 2_000; now += 1_000) observe(service, now);
-    service.notifyIfNeeded({ ...interruption, now: 2_000 });
-    for (let now = 3_000; now < 6_000; now += 1_000) expect(observe(service, now)).toBe(false);
-    expect(observe(service, 6_000)).toBe(true);
-    expect(Notification).toHaveBeenCalledTimes(1);
+  it('đếm lại khi trở về tab, tư thế đúng hoặc không có dự đoán', () => {
+    for (const interruption of [
+      { hidden: false, predictions: prediction(1) },
+      { hidden: true, predictions: prediction(0.1) },
+      { hidden: true, predictions: [] }
+    ]) {
+      const Notification = mockNotifications();
+      const service = new BrowserNotificationService();
+      for (let now = 0; now < 2_000; now += 1_000) observe(service, now);
+      service.notifyIfNeeded({ ...interruption, now: 2_000 });
+      for (let now = 3_000; now < 6_000; now += 1_000) expect(observe(service, now)).toBe(false);
+      expect(observe(service, 6_000)).toBe(true);
+      expect(Notification).toHaveBeenCalledTimes(1);
+    }
   });
 
   it('đếm lại sau khi ngừng camera hoặc gián đoạn quan sát quá 5 giây', () => {

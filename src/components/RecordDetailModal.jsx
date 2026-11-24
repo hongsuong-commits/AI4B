@@ -12,6 +12,7 @@ import {
   VIOLATION_LABELS,
   VIOLATION_MESSAGES
 } from '../constants/postureConfig.js';
+import { formatConfidencePercent } from '../utils/formatConfidence.js';
 
 export default function RecordDetailModal({ record, onClose }) {
   if (!record) return null;
@@ -19,10 +20,7 @@ export default function RecordDetailModal({ record, onClose }) {
   const isCorrect =
     record.status === STATUS_KEY.CORRECT ||
     record.className === 'Ngồi đúng tư thế';
-  const confidencePercent =
-    typeof record.confidence === 'number'
-      ? Math.round(record.confidence * 100)
-      : null;
+  const confidencePercent = formatConfidencePercent(record.confidence);
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -129,7 +127,7 @@ export default function RecordDetailModal({ record, onClose }) {
             <div>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Độ tin cậy AI</div>
               <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-main)' }}>
-                {confidencePercent !== null ? `${confidencePercent}%` : '—'}
+                {confidencePercent}
               </div>
             </div>
           </div>

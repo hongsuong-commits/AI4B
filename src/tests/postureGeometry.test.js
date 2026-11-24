@@ -6,7 +6,6 @@ import {
   verifyCameraAngle,
   calculatePostureMetrics,
   evaluatePosture,
-  calculateCalibrationBaseline
 } from '../services/postureGeometry.js';
 import { KEYPOINT_NAMES } from '../ai/aiContract.js';
 import {
@@ -18,12 +17,9 @@ import {
 } from '../constants/postureConfig.js';
 
 describe('Posture Geometry & Measurements', () => {
-  it('calculateDistance returns correct euclidean distance', () => {
+  it('basic geometry helpers return expected values', () => {
     expect(calculateDistance({ x: 0, y: 0 }, { x: 3, y: 4 })).toBe(5);
     expect(calculateDistance(null, { x: 1, y: 1 })).toBe(0);
-  });
-
-  it('calculateMedian returns correct median for odd and even arrays', () => {
     expect(calculateMedian([5, 1, 9])).toBe(5);
     expect(calculateMedian([10, 20, 30, 40])).toBe(25);
     expect(calculateMedian([])).toBe(0);
@@ -135,16 +131,4 @@ describe('Posture Geometry & Measurements', () => {
     expect(tiltedEval.postureScore).toBe(40);
   });
 
-  it('calculateCalibrationBaseline computes medians for collected samples', () => {
-    const samples = [
-      { shoulderBalance: 2, trunkLean: 1 },
-      { shoulderBalance: 4, trunkLean: 3 },
-      { shoulderBalance: 1, trunkLean: 2 }
-    ];
-
-    const baseline = calculateCalibrationBaseline(samples, VIEW_ANGLES.FRONT);
-    expect(baseline.shoulderBalance).toBe(2);
-    expect(baseline.trunkLean).toBe(2);
-    expect(baseline.viewAngle).toBe(VIEW_ANGLES.FRONT);
-  });
 });

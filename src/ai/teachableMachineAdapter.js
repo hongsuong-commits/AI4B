@@ -1,6 +1,15 @@
 import JSZip from 'jszip';
 import { KEYPOINT_NAMES, createKeypoint, createStandardPoseFrame } from './aiContract.js';
 
+export function selectTopPrediction(predictions) {
+  const sorted = (Array.isArray(predictions) ? predictions : [])
+    .filter(prediction => prediction && typeof prediction.className === 'string' &&
+      Number.isFinite(prediction.probability) && prediction.probability >= 0 && prediction.probability <= 1)
+    .sort((a, b) => b.probability - a.probability);
+  const top = sorted[0];
+  return top ? { className: top.className, probability: top.probability, allPredictions: sorted } : null;
+}
+
 class TeachableMachineAdapter {
   constructor() {
     this.model = null;
@@ -268,7 +277,7 @@ class TeachableMachineAdapter {
   /**
    * Thực hiện nhận diện pose và phân loại tư thế từ video
    */
-  async detectPose(videoElement, timestamp = performance.now()) {
+  async detectPose(videoElement, timestamp = performance.now(), captureId = null) {
     if (!this.isLoaded || !this.model || !videoElement) {
       return createStandardPoseFrame({
         timestamp,
@@ -294,16 +303,9 @@ class TeachableMachineAdapter {
 
       // 2. Dự đoán lớp tư thế qua model.predict(posenetOutput)
       const predictions = await this.model.predict(posenetOutput);
-      let topPrediction = null;
-
-      if (predictions && predictions.length > 0) {
-        const sorted = [...predictions].sort((a, b) => b.probability - a.probability);
-        topPrediction = {
-          className: sorted[0].className,
-          probability: Math.round(sorted[0].probability * 100) / 100,
-          allPredictions: sorted
-        };
-      }
+      if (captureId) console.info('[confidence-trace]', { stage: 'predict-raw', captureId, predictions });
+      const topPrediction = selectTopPrediction(predictions);
+      if (captureId) console.info('[confidence-trace]', { stage: 'adapter', captureId, confidence: topPrediction?.probability ?? null });
 
       // 3. Chuẩn hóa 17 keypoints PoseNet sang hợp đồng chung
       const keypointsMap = {};
@@ -346,7 +348,8 @@ class TeachableMachineAdapter {
         ...coreKeys.map(k => keypointsMap[k]?.score ?? 0.5)
       );
 
-      return createStandardPoseFrame({
+      return {
+        ...createStandardPoseFrame({
         timestamp,
         aiSource: 'teachable-machine',
         keypoints: keypointsMap,
@@ -354,7 +357,9 @@ class TeachableMachineAdapter {
         minConfidence,
         modelPrediction: topPrediction,
         raw: { pose, predictions }
-      });
+        }),
+        captureId
+      };
     } catch (err) {
       console.error('Lỗi suy luận Teachable Machine Pose:', err);
       return createStandardPoseFrame({

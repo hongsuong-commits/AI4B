@@ -72,6 +72,25 @@ describe('Storage & ZIP Export Services', () => {
     expect(storageService.getHistory()[0].capture_source).toBe('auto');
   });
 
+  it('round-trips representative model confidence values unchanged through localStorage', async () => {
+    for (const [index, confidence] of [0.93, 0.87, 0.996, 1.00].entries()) {
+      const captureId = `capture-${index}`;
+      const result = await storageService.addRecord({
+        sessionId: `session-${captureId}`,
+        frameId: index + 1,
+        captureId,
+        status: STATUS_KEY.CORRECT,
+        confidence
+      });
+
+      expect(result.record.confidence).toBe(confidence);
+      const stored = JSON.parse(localStorage.getItem(STORAGE_KEYS.HISTORY));
+      expect(stored.find(record => record.captureId === captureId).confidence).toBe(confidence);
+      storageService.cachedHistory = null;
+      expect(storageService.getHistory().find(record => record.captureId === captureId).confidence).toBe(confidence);
+    }
+  });
+
   it('enforces 3 MiB budget limit safely', async () => {
     // Generate a payload that would exceed 3 MiB
     // We can simulate this by setting a huge string in the record

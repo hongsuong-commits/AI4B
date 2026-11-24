@@ -1,36 +1,36 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { teachableMachineAdapter } from '../ai/teachableMachineAdapter.js';
+import { teachableMachineAdapter, selectTopPrediction } from '../ai/teachableMachineAdapter.js';
 
 describe('TeachableMachineAdapter Validation & Logic', () => {
+  it('preserves the maximum model probability without rounding it to 1.00', () => {
+    for (const [values, expected] of [
+      [[0.07, 0.93], 0.93],
+      [[0.92, 0.08], 0.92],
+      [[0.15, 0.85], 0.85],
+      [[0.004, 0.996], 0.996],
+      [[0, 1], 1.00]
+    ]) {
+      const result = selectTopPrediction(values.map((probability, index) => ({ className: `class-${index}`, probability })));
+      expect(result.probability).toBe(expected);
+    }
+  });
+
   beforeEach(() => {
     teachableMachineAdapter.dispose();
   });
 
-  it('rejects empty URL with appropriate error', async () => {
-    const success = await teachableMachineAdapter.loadModel('');
-    expect(success).toBe(false);
-    expect(teachableMachineAdapter.loadError).toContain('Chưa cấu hình URL');
-  });
-
-  it('rejects placeholder <ID> URL with specific warning', async () => {
-    const success = await teachableMachineAdapter.loadModel('https://teachablemachine.withgoogle.com/models/<ID>/');
-    expect(success).toBe(false);
-    expect(teachableMachineAdapter.loadError).toContain("URL chứa ký tự mẫu '<ID>'");
-  });
-
-  it('rejects training project URL with instruction to export', async () => {
-    const success = await teachableMachineAdapter.loadModel('https://teachablemachine.withgoogle.com/train/pose/12345');
-    expect(success).toBe(false);
-    expect(teachableMachineAdapter.loadError).toContain('Đây là link trang huấn luyện trên trình duyệt');
-  });
-
-  it('validates file upload requiring all 3 files', async () => {
-    // Chỉ truyền 1 file .json không đủ
-    const incompleteFiles = [
+  it('rejects invalid model URLs and incomplete file uploads', async () => {
+    for (const [url, message] of [
+      ['', 'Chưa cấu hình URL'],
+      ['https://teachablemachine.withgoogle.com/models/<ID>/', "URL chứa ký tự mẫu '<ID>'"],
+      ['https://teachablemachine.withgoogle.com/train/pose/12345', 'Đây là link trang huấn luyện trên trình duyệt']
+    ]) {
+      expect(await teachableMachineAdapter.loadModel(url)).toBe(false);
+      expect(teachableMachineAdapter.loadError).toContain(message);
+    }
+    expect(await teachableMachineAdapter.loadModelFromFiles([
       new File(['{}'], 'model.json', { type: 'application/json' })
-    ];
-    const success = await teachableMachineAdapter.loadModelFromFiles(incompleteFiles);
-    expect(success).toBe(false);
+    ])).toBe(false);
     expect(teachableMachineAdapter.loadError).toContain('Vui lòng chọn đủ 3 tệp');
   });
 });
