@@ -21,7 +21,7 @@ export default function RecordDetailModal({ record, onClose }) {
     record.className === 'Ngồi đúng tư thế';
   const confidencePercent =
     typeof record.confidence === 'number'
-      ? Math.round(record.confidence <= 1 ? record.confidence * 100 : record.confidence)
+      ? Math.round(record.confidence * 100)
       : null;
 
   return (
@@ -109,7 +109,7 @@ export default function RecordDetailModal({ record, onClose }) {
             <div>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Điểm tư thế</div>
               <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-main)' }}>
-                {record.postureScore} / 100
+                {Number.isFinite(record.postureScore) ? `${record.postureScore} / 100` : '—'}
               </div>
             </div>
           </div>
@@ -127,7 +127,7 @@ export default function RecordDetailModal({ record, onClose }) {
           >
             <Gauge size={24} color="#8b5cf6" />
             <div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Confidence Khớp</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Độ tin cậy AI</div>
               <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-main)' }}>
                 {confidencePercent !== null ? `${confidencePercent}%` : '—'}
               </div>

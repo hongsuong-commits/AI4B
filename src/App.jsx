@@ -19,6 +19,7 @@ import { exportHistoryToZip } from './services/zipExportService.js';
 import { audioAlertService } from './services/audioAlertService.js';
 import { browserNotificationService } from './services/browserNotificationService.js';
 import { AutoSaveTimer, AUTO_SAVE_INTERVAL_MS } from './services/autoSaveTimer.js';
+import { buildCaptureRecord } from './services/captureAssessment.js';
 
 // Example predictions used only in simulation mode.
 const DEFAULT_PREDICTIONS = [
@@ -212,29 +213,21 @@ export default function App() {
     if (!video) return;
 
     try {
-      const dataUrl = await storageService.compressVideoFrame(video);
-      if (!dataUrl || !autoSaveEnabledRef.current || isStopRequestedRef.current || generation !== autoSaveGenerationRef.current) return;
-
-      const metricsRes = poseFrame.keypoints
-        ? calculatePostureMetrics({ keypoints: poseFrame.keypoints, thresholds: settings.thresholds || {} })
-        : null;
-
-      const record = {
+      const capturedFrame = await storageService.captureVideoFrame(video);
+      if (!capturedFrame?.dataUrl || !capturedFrame.canvas || !autoSaveEnabledRef.current || isStopRequestedRef.current || generation !== autoSaveGenerationRef.current) return;
+      const capturedPose = await teachableMachineAdapter.detectPose(capturedFrame.canvas, performance.now());
+      const record = buildCaptureRecord({
+        poseFrame: capturedPose,
+        image: capturedFrame.dataUrl,
+        capturedAt: new Date().toISOString(),
+        captureSource: 'auto',
+        frameWidth: capturedFrame.canvas.width,
+        frameHeight: capturedFrame.canvas.height,
         sessionId: sessionIdRef.current,
         frameId: ++frameCounterRef.current,
-        source: 'auto',
-        capture_source: 'auto',
-        aiSource: AI_SOURCES.TEACHABLE_MACHINE,
-        viewAngle: 'front',
-        status: 'Incorrect Posture',
-        className: topClass,
-        confidence: topProb,
-        postureScore: 30,
-        metrics: metricsRes?.metrics || { neckAngle: neckAngle ?? 32 },
-        violations: [],
-        image: dataUrl,
-        capturedAt: new Date().toISOString()
-      };
+        thresholds: settings.thresholds
+      });
+      if (!record) return;
 
       const res = await storageService.addRecord(record);
       if (res.success) {
@@ -252,7 +245,6 @@ export default function App() {
     }
   }, [
     settings.thresholds,
-    neckAngle,
     addToast
   ]);
 
@@ -316,11 +308,12 @@ export default function App() {
               // Neck Angle calculation
               if (poseResult.keypoints) {
                 try {
-                  const metricsRes = calculatePostureMetrics({
-                    keypoints: poseResult.keypoints,
-                    thresholds: settings.thresholds || {}
-                  });
-                  setNeckAngle(metricsRes?.metrics?.neckAngle ?? null);
+                  const canvasWidth = video.videoWidth;
+                  const canvasHeight = video.videoHeight;
+                  const metricsRes = calculatePostureMetrics({ keypoints: poseResult.keypoints, thresholds: settings.thresholds || {} });
+                  const dx = Math.abs(poseResult.keypoints.leftEar?.x - poseResult.keypoints.leftShoulder?.x) * canvasWidth;
+                  const dy = Math.abs(poseResult.keypoints.leftEar?.y - poseResult.keypoints.leftShoulder?.y) * canvasHeight;
+                  setNeckAngle(Number.isFinite(dx / dy) ? Math.atan2(dx, dy) * 180 / Math.PI : metricsRes?.metrics?.neckAngle ?? null);
                 } catch {
                   setNeckAngle(null);
                 }
@@ -388,32 +381,12 @@ export default function App() {
         return;
       }
       const poseAtCapture = await teachableMachineAdapter.detectPose(capturedFrame.canvas, performance.now());
-      const topPred = poseAtCapture.modelPrediction;
-      if (!poseAtCapture.hasPerson || !topPred || !Number.isFinite(topPred.probability)) {
+      const record = buildCaptureRecord({ poseFrame: poseAtCapture, image: capturedFrame.dataUrl, capturedAt: new Date().toISOString(), captureSource: 'manual', frameWidth: capturedFrame.canvas.width, frameHeight: capturedFrame.canvas.height, sessionId: sessionIdRef.current, frameId: ++frameCounterRef.current, thresholds: settings.thresholds });
+      if (!record) {
         addToast('Không nhận diện được tư thế trong ảnh vừa chụp.', 'warning');
         return;
       }
-
-      const isBad = topPred.className === TM_CLASSES.INCORRECT;
-
-      const record = {
-        sessionId: sessionIdRef.current,
-        frameId: ++frameCounterRef.current,
-        source: 'manual',
-        capture_source: 'manual',
-        aiSource: AI_SOURCES.TEACHABLE_MACHINE,
-        viewAngle: 'front',
-        status: isBad ? 'Incorrect Posture' : 'Correct Posture',
-        className: topPred?.className || 'Ngồi đúng tư thế',
-        confidence: topPred.probability,
-        postureScore: isBad ? 35 : 95,
-        metrics: poseAtCapture.keypoints
-          ? calculatePostureMetrics({ keypoints: poseAtCapture.keypoints, thresholds: settings.thresholds || {} })?.metrics || {}
-          : {},
-        violations: isBad ? ['MODEL_INCORRECT'] : [],
-        image: capturedFrame.dataUrl,
-        capturedAt: new Date().toISOString()
-      };
+      const isBad = record.status === 'Incorrect Posture';
 
       const res = await storageService.addRecord(record);
       if (res.success) {

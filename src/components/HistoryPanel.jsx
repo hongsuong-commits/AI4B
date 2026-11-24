@@ -49,9 +49,9 @@ export default function HistoryPanel({
       ) : (
         <div className="pro-history-list">
           {history.map((record) => {
-            const rawConf = typeof record.confidence === 'number'
-              ? (record.confidence > 1 ? record.confidence / 100 : record.confidence)
-              : 0.85;
+            const rawConf = typeof record.confidence === 'number' && Number.isFinite(record.confidence)
+              ? record.confidence
+              : null;
             const severity = getSeverity(rawConf);
 
             const isCorrect = (record.className || record.status) === 'Ngồi đúng tư thế';
@@ -92,7 +92,7 @@ export default function HistoryPanel({
                     </span>
                     <span className="pro-history-conf">
                       {' — '}
-                      {rawConf.toFixed(2)}
+                      {rawConf === null ? '—' : rawConf.toFixed(2)}
                     </span>
                   </div>
                   <div className="pro-history-date">{formatDateTime(record.capturedAt)}</div>
