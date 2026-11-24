@@ -1,22 +1,6 @@
 import JSZip from 'jszip';
 import { KEYPOINT_NAMES, createKeypoint, createStandardPoseFrame } from './aiContract.js';
 
-export function selectTopPrediction(predictions) {
-  const validPredictions = (Array.isArray(predictions) ? predictions : [])
-    .filter(prediction => prediction && typeof prediction.className === 'string' &&
-      Number.isFinite(prediction.probability) && prediction.probability >= 0 && prediction.probability <= 1);
-  if (validPredictions.length === 0) return null;
-  const probabilities = validPredictions.map(prediction => prediction.probability);
-  const confidence = Math.max(...probabilities);
-  const top = validPredictions.find(prediction => prediction.probability === confidence);
-  const allPredictions = [...validPredictions].sort((a, b) => b.probability - a.probability);
-  return { className: top.className, probability: confidence, confidence, probabilities, allPredictions };
-}
-
-function createInferenceId() {
-  return globalThis.crypto?.randomUUID?.() || `inference_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-}
-
 class TeachableMachineAdapter {
   constructor() {
     this.model = null;
@@ -285,15 +269,12 @@ class TeachableMachineAdapter {
    * Thực hiện nhận diện pose và phân loại tư thế từ video
    */
   async detectPose(videoElement, timestamp = performance.now()) {
-    const inferenceId = createInferenceId();
-    const inferenceTimestamp = new Date().toISOString();
-    const inferenceMeta = { inferenceId, captureId: inferenceId, inferenceTimestamp, inputFrame: videoElement };
     if (!this.isLoaded || !this.model || !videoElement) {
-      return { ...createStandardPoseFrame({
+      return createStandardPoseFrame({
         timestamp,
         aiSource: 'teachable-machine',
         hasPerson: false
-      }), ...inferenceMeta, probabilities: [], confidence: null };
+      });
     }
 
     try {
@@ -304,16 +285,25 @@ class TeachableMachineAdapter {
       const { pose, posenetOutput } = await this.model.estimatePose(videoElement);
 
       if (!pose || !pose.keypoints || pose.keypoints.length === 0) {
-        return { ...createStandardPoseFrame({
+        return createStandardPoseFrame({
           timestamp,
           aiSource: 'teachable-machine',
           hasPerson: false
-        }), ...inferenceMeta, probabilities: [], confidence: null };
+        });
       }
 
       // 2. Dự đoán lớp tư thế qua model.predict(posenetOutput)
       const predictions = await this.model.predict(posenetOutput);
-      const topPrediction = selectTopPrediction(predictions);
+      let topPrediction = null;
+
+      if (predictions && predictions.length > 0) {
+        const sorted = [...predictions].sort((a, b) => b.probability - a.probability);
+        topPrediction = {
+          className: sorted[0].className,
+          probability: Math.round(sorted[0].probability * 100) / 100,
+          allPredictions: sorted
+        };
+      }
 
       // 3. Chuẩn hóa 17 keypoints PoseNet sang hợp đồng chung
       const keypointsMap = {};
@@ -356,8 +346,7 @@ class TeachableMachineAdapter {
         ...coreKeys.map(k => keypointsMap[k]?.score ?? 0.5)
       );
 
-      return {
-        ...createStandardPoseFrame({
+      return createStandardPoseFrame({
         timestamp,
         aiSource: 'teachable-machine',
         keypoints: keypointsMap,
@@ -365,18 +354,14 @@ class TeachableMachineAdapter {
         minConfidence,
         modelPrediction: topPrediction,
         raw: { pose, predictions }
-        }),
-        ...inferenceMeta,
-        probabilities: topPrediction?.probabilities || [],
-        confidence: topPrediction?.confidence ?? null
-      };
+      });
     } catch (err) {
       console.error('Lỗi suy luận Teachable Machine Pose:', err);
-      return { ...createStandardPoseFrame({
+      return createStandardPoseFrame({
         timestamp,
         aiSource: 'teachable-machine',
         hasPerson: false
-      }), ...inferenceMeta, probabilities: [], confidence: null };
+      });
     }
   }
 

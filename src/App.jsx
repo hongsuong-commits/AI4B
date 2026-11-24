@@ -61,7 +61,6 @@ export default function App() {
   const [predictions, setPredictions] = useState(DEFAULT_PREDICTIONS);
   const [activePoseFrame, setActivePoseFrame] = useState(null);
   const [neckAngle, setNeckAngle] = useState(9);
-  const latestInferenceRef = useRef(null);
 
   // Stats matching screenshot defaults
   const [checkCount, setCheckCount] = useState(99);
@@ -176,7 +175,6 @@ export default function App() {
       streamRef.current = stream;
       setPredictions([]);
       setActivePoseFrame(null);
-      latestInferenceRef.current = null;
       setNeckAngle(null);
       setCameraStream(stream);
       setIsCameraRunning(true);
@@ -201,35 +199,35 @@ export default function App() {
     setCameraStream(null);
     setIsCameraRunning(false);
     setActivePoseFrame(null);
-    latestInferenceRef.current = null;
     setPredictions(DEFAULT_PREDICTIONS);
     setNeckAngle(9);
     isInferenceRunningRef.current = false;
   }, []);
 
   // Auto-save bad posture
-  const autoSaveBadPosture = useCallback(async (inference) => {
+  const autoSaveBadPosture = useCallback(async (poseFrame, topClass, topProb) => {
     if (!autoSaveEnabledRef.current || isStopRequestedRef.current) return;
     const generation = autoSaveGenerationRef.current;
-    const { poseFrame, canvas } = inference || {};
-    if (!canvas || !poseFrame?.inferenceId || poseFrame.inputFrame !== canvas || !Number.isFinite(poseFrame.confidence)) return;
+
+    const video = document.getElementById('webcam-video');
+    if (!video) return;
 
     try {
-      const image = storageService.encodeCanvasFrame(canvas);
-      if (!image || !autoSaveEnabledRef.current || isStopRequestedRef.current || generation !== autoSaveGenerationRef.current) return;
+      const capturedFrame = await storageService.captureVideoFrame(video);
+      if (!capturedFrame?.dataUrl || !capturedFrame.canvas || !autoSaveEnabledRef.current || isStopRequestedRef.current || generation !== autoSaveGenerationRef.current) return;
+      const capturedPose = await teachableMachineAdapter.detectPose(capturedFrame.canvas, performance.now());
       const record = buildCaptureRecord({
-        poseFrame,
-        image,
+        poseFrame: capturedPose,
+        image: capturedFrame.dataUrl,
         capturedAt: new Date().toISOString(),
         captureSource: 'auto',
-        frameWidth: canvas.width,
-        frameHeight: canvas.height,
+        frameWidth: capturedFrame.canvas.width,
+        frameHeight: capturedFrame.canvas.height,
         sessionId: sessionIdRef.current,
         frameId: ++frameCounterRef.current,
         thresholds: settings.thresholds
       });
       if (!record) return;
-      console.info('[confidence-trace]', { stage: 'auto-payload', captureId: record.captureId, confidence: record.confidence });
 
       const res = await storageService.addRecord(record);
       if (res.success) {
@@ -291,14 +289,9 @@ export default function App() {
       if (video && video.readyState >= 2 && video.videoWidth > 0 && !isInferenceRunningRef.current) {
         isInferenceRunningRef.current = true;
         try {
-          const frameCanvas = storageService.captureVideoCanvas(video);
-          const poseResult = frameCanvas
-            ? await teachableMachineAdapter.detectPose(frameCanvas, now)
-            : null;
+          const poseResult = await teachableMachineAdapter.detectPose(video, now);
 
-          if (isMounted && poseResult) {
-            const inference = { canvas: frameCanvas, poseFrame: poseResult, completedAt: performance.now() };
-            latestInferenceRef.current = inference;
+          if (isMounted) {
             setActivePoseFrame(poseResult);
             setCheckCount((c) => c + 1);
 
@@ -315,8 +308,8 @@ export default function App() {
               // Neck Angle calculation
               if (poseResult.keypoints) {
                 try {
-                  const canvasWidth = frameCanvas.width;
-                  const canvasHeight = frameCanvas.height;
+                  const canvasWidth = video.videoWidth;
+                  const canvasHeight = video.videoHeight;
                   const metricsRes = calculatePostureMetrics({ keypoints: poseResult.keypoints, thresholds: settings.thresholds || {} });
                   const dx = Math.abs(poseResult.keypoints.leftEar?.x - poseResult.keypoints.leftShoulder?.x) * canvasWidth;
                   const dy = Math.abs(poseResult.keypoints.leftEar?.y - poseResult.keypoints.leftShoulder?.y) * canvasHeight;
@@ -341,7 +334,7 @@ export default function App() {
                 isIncorrect: topClass === TM_CLASSES.INCORRECT,
                 now: observedAt
               })) {
-                await autoSaveBadPosture(inference);
+                await autoSaveBadPosture(poseResult, topClass, topProb);
               }
             } else {
               browserNotificationService.reset();
@@ -378,24 +371,21 @@ export default function App() {
 
   // Manual Capture Now
   const handleCaptureNow = useCallback(async () => {
-    const inference = latestInferenceRef.current;
-    if (!inference?.canvas || !inference.poseFrame?.inferenceId || inference.poseFrame.inputFrame !== inference.canvas || performance.now() - inference.completedAt > 2000) {
-      addToast('Chưa có khung hình kèm kết quả AI hợp lệ để chụp.', 'warning');
-      return;
-    }
+    const video = document.getElementById('webcam-video');
     try {
-      const image = storageService.encodeCanvasFrame(inference.canvas);
-      if (!image) {
-        addToast('Không thể tạo ảnh từ khung hình đã nhận diện.', 'warning');
+      const capturedFrame = video && video.videoWidth > 0
+        ? await storageService.captureVideoFrame(video)
+        : null;
+      if (!capturedFrame?.dataUrl || !capturedFrame.canvas) {
+        addToast('Không thể chụp khung hình camera.', 'warning');
         return;
       }
-      console.info('[confidence-trace]', { stage: 'manual-capture-inference', captureId: inference.poseFrame.inferenceId, confidence: inference.poseFrame.confidence });
-      const record = buildCaptureRecord({ poseFrame: inference.poseFrame, image, capturedAt: new Date().toISOString(), captureSource: 'manual', frameWidth: inference.canvas.width, frameHeight: inference.canvas.height, sessionId: sessionIdRef.current, frameId: ++frameCounterRef.current, thresholds: settings.thresholds });
+      const poseAtCapture = await teachableMachineAdapter.detectPose(capturedFrame.canvas, performance.now());
+      const record = buildCaptureRecord({ poseFrame: poseAtCapture, image: capturedFrame.dataUrl, capturedAt: new Date().toISOString(), captureSource: 'manual', frameWidth: capturedFrame.canvas.width, frameHeight: capturedFrame.canvas.height, sessionId: sessionIdRef.current, frameId: ++frameCounterRef.current, thresholds: settings.thresholds });
       if (!record) {
         addToast('Không nhận diện được tư thế trong ảnh vừa chụp.', 'warning');
         return;
       }
-      console.info('[confidence-trace]', { stage: 'manual-payload', captureId: record.captureId, confidence: record.confidence });
       const isBad = record.status === 'Incorrect Posture';
 
       const res = await storageService.addRecord(record);

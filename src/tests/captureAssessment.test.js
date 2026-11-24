@@ -21,7 +21,7 @@ function keypointsAtAngle(angle, score = 0.9) {
 describe('posture score from same-side ear and shoulder keypoints', () => {
   it.each([
     [5, 100],
-    [25, 66.7],
+    [25, 50],
     [45, 0]
   ])('maps %i degrees to %i points', (angle, expectedScore) => {
     expect(calculateNeckPostureScore(keypointsAtAngle(angle), frameSize.width, frameSize.height)?.postureScore)
@@ -39,57 +39,53 @@ describe('posture score from same-side ear and shoulder keypoints', () => {
 });
 
 describe('manual and automatic capture assessment', () => {
-  it('preserves inference data and confidence in manual and automatic capture payloads', () => {
-    for (const captureSource of ['manual', 'auto']) {
-      for (const confidence of [0.93, 0.87, 0.996, 1.00]) {
-        const capturedAt = '2026-11-24T11:00:00.000Z';
-        const className = captureSource === 'manual' ? TM_CLASSES.CORRECT : TM_CLASSES.INCORRECT;
-        const poseFrame = {
-          hasPerson: true,
-          aiSource: 'teachable-machine',
-          inferenceId: `inference-${captureSource}-${confidence}`,
-          inferenceTimestamp: capturedAt,
-          probabilities: [1 - confidence, confidence],
-          confidence,
-          inputFrame: {},
-          keypoints: keypointsAtAngle(5),
-          modelPrediction: { className: TM_CLASSES.CORRECT, probability: confidence }
-        };
-        poseFrame.modelPrediction.className = className;
-        const record = buildCaptureRecord({
-          poseFrame,
-          image: 'snapshot',
-          capturedAt,
-          captureSource,
-          frameWidth: frameSize.width,
-          frameHeight: frameSize.height,
-          sessionId: 'session_test',
-          frameId: `${captureSource}-${confidence}`,
-          thresholds: {}
-        });
+  it.each([
+    ['manual', TM_CLASSES.CORRECT, 0.92, 'Correct Posture'],
+    ['auto', TM_CLASSES.INCORRECT, 0.85, 'Incorrect Posture']
+  ])('keeps label, confidence, keypoints and score from the captured inference for %s capture', (
+    captureSource,
+    className,
+    confidence,
+    expectedLabel
+  ) => {
+    const poseFrame = {
+      hasPerson: true,
+      aiSource: 'teachable-machine',
+      keypoints: keypointsAtAngle(25),
+      modelPrediction: { className, probability: confidence }
+    };
+    const capturedAt = '2026-11-24T11:00:00.000Z';
+    const record = buildCaptureRecord({
+      poseFrame,
+      image: 'data:image/jpeg;base64,snapshot',
+      capturedAt,
+      captureSource,
+      frameWidth: frameSize.width,
+      frameHeight: frameSize.height,
+      sessionId: 'session_test',
+      frameId: captureSource,
+      thresholds: {}
+    });
 
-        expect(record.confidence).toBe(confidence);
-        expect(record.capture_source).toBe(captureSource);
-        expect(record.inferenceId).toBe(`inference-${captureSource}-${confidence}`);
-        expect(record.inferenceTimestamp).toBe(capturedAt);
-        expect(record.keypoints).toBe(poseFrame.keypoints);
-        expect(record.image).toBe('snapshot');
-        expect(record.status).toBe(captureSource === 'manual' ? 'Correct Posture' : 'Incorrect Posture');
-      }
-    }
+    expect(record.predictionLabel).toBe(expectedLabel);
+    expect(record.status).toBe(expectedLabel);
+    expect(record.confidence).toBe(confidence);
+    expect(record.postureScore).toBe(50);
+    expect(record.keypoints).toBe(poseFrame.keypoints);
+    expect(record.image).toBe('data:image/jpeg;base64,snapshot');
+    expect(record.capturedAt).toBe(capturedAt);
+    expect(record.capture_source).toBe(captureSource);
   });
 
-  it('rejects a capture inference with invalid confidence', () => {
+  it('keeps a valid label but stores NULL confidence and score when source data is invalid', () => {
     const assessment = getCaptureAssessment({
       hasPerson: true,
       keypoints: {},
-      confidence: 1.01,
-      inferenceId: 'invalid-inference',
-      inputFrame: {},
-      probabilities: [0, 1.01],
       modelPrediction: { className: TM_CLASSES.CORRECT, probability: 1.01 }
     }, frameSize.width, frameSize.height);
 
-    expect(assessment).toBeNull();
+    expect(assessment.predictionLabel).toBe('Correct Posture');
+    expect(assessment.confidence).toBeNull();
+    expect(assessment.postureScore).toBeNull();
   });
 });

@@ -75,15 +75,10 @@ export function getCaptureAssessment(poseFrame, frameWidth, frameHeight, thresho
   const predictionLabel = normalizePredictionLabel(prediction?.className);
   if (!poseFrame?.hasPerson || !predictionLabel) return null;
 
-  const confidence = Number.isFinite(poseFrame.confidence) &&
-    poseFrame.confidence >= 0 && poseFrame.confidence <= 1
-    ? poseFrame.confidence
+  const confidence = Number.isFinite(prediction.probability) &&
+    prediction.probability >= 0 && prediction.probability <= 1
+    ? prediction.probability
     : null;
-  const probabilities = poseFrame.probabilities;
-  if (!poseFrame.inferenceId || !poseFrame.inputFrame || confidence === null ||
-      confidence !== prediction.probability || !Array.isArray(probabilities) || probabilities.length === 0 ||
-      probabilities.some(value => !Number.isFinite(value) || value < 0 || value > 1) ||
-      Math.max(...probabilities) !== confidence) return null;
   const posture = calculateNeckPostureScore(poseFrame.keypoints, frameWidth, frameHeight);
   const minimumProbability = thresholds.tmMinProbability ?? DEFAULT_THRESHOLDS.tmMinProbability;
   const modelIncorrect = predictionLabel === PREDICTION_LABELS.INCORRECT && confidence !== null && confidence >= minimumProbability;
@@ -113,7 +108,7 @@ export function buildCaptureRecord({
   thresholds
 }) {
   const assessment = getCaptureAssessment(poseFrame, frameWidth, frameHeight, thresholds);
-  if (!assessment || typeof image !== 'string' || !image) return null;
+  if (!assessment) return null;
 
   const metrics = poseFrame.keypoints
     ? calculatePostureMetrics({
@@ -124,10 +119,6 @@ export function buildCaptureRecord({
     : {};
 
   return {
-    captureId: poseFrame.inferenceId || poseFrame.captureId || null,
-    inferenceId: poseFrame.inferenceId || null,
-    inferenceTimestamp: poseFrame.inferenceTimestamp || null,
-    probabilities: poseFrame.probabilities || [],
     sessionId,
     frameId,
     source: captureSource,

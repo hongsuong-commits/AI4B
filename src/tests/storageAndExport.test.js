@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { storageService } from '../services/storageService.js';
 import { exportHistoryToZip } from '../services/zipExportService.js';
-import { SYSTEM_LIMITS, STATUS_KEY } from '../constants/postureConfig.js';
+import { STORAGE_KEYS, SYSTEM_LIMITS, STATUS_KEY } from '../constants/postureConfig.js';
 
 // Polyfill localStorage cho môi trường node/vitest nếu cần
 if (typeof localStorage === 'undefined') {
